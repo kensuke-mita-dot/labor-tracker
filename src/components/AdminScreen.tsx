@@ -64,8 +64,8 @@ export default function AdminScreen({ appState, setAppState }: Props) {
     const salary = parseInt(memberSalary, 10);
     if (!name) { setMemberError('名前を入力してください。'); return; }
     if (isNaN(salary) || salary < 0) { setMemberError('月給を正しく入力してください。'); return; }
-    if (appState.members.length >= 5 && !editingMember) {
-      setMemberError('メンバーは最大5名です。');
+    if (appState.members.length >= 10 && !editingMember) {
+      setMemberError('メンバーは最大10名です。');
       return;
     }
     setAppState((prev) => {
@@ -273,7 +273,7 @@ export default function AdminScreen({ appState, setAppState }: Props) {
         <section className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">メンバー管理</h2>
-            <span className="text-xs text-gray-400">{appState.members.length} / 5名</span>
+            <span className="text-xs text-gray-400">{appState.members.length} / 10名</span>
           </div>
           <div className="p-4 space-y-3">
             <form onSubmit={handleAddMember} className="flex gap-2 flex-wrap">
