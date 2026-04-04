@@ -20,7 +20,17 @@
       "Bash(git init:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh auth status)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh repo create labor-tracker --public --source=. --remote=origin --push)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run list --repo kensuke-mita-dot/labor-tracker --limit 3)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run watch 23740766780 --repo kensuke-mita-dot/labor-tracker)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh api repos/kensuke-mita-dot/labor-tracker/pages --method POST --field build_type=workflow)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh workflow run deploy.yml --repo kensuke-mita-dot/labor-tracker)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" git push)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run list --repo kensuke-mita-dot/labor-tracker --limit 1)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run watch 23740795049 --repo kensuke-mita-dot/labor-tracker)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" npm install firebase)"
     ]
   }
 }

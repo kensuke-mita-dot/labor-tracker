@@ -1,12 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AppState, Screen, WeekEntry, MonthlyData } from './types';
 import { splitWeekByMonth, parseDate } from './utils/dateUtils';
+import { fetchState, saveState, subscribeState } from './services/firestoreService';
 import Navigation from './components/Navigation';
 import InputScreen from './components/InputScreen';
 import CheckScreen from './components/CheckScreen';
 import AdminScreen from './components/AdminScreen';
-
-const STORAGE_KEY = 'labor-tracker-v1';
 
 const DEFAULT_STATE: AppState = {
   members: [],
@@ -15,31 +14,46 @@ const DEFAULT_STATE: AppState = {
   monthlyData: {},
 };
 
-function loadState(): AppState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_STATE;
-    return { ...DEFAULT_STATE, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_STATE;
-  }
-}
-
-function saveState(state: AppState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>('input');
-  const [appState, setAppStateRaw] = useState<AppState>(loadState);
+  const [appState, setAppStateLocal] = useState<AppState>(DEFAULT_STATE);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const setAppState = useCallback((updater: (prev: AppState) => AppState) => {
-    setAppStateRaw((prev) => {
-      const next = updater(prev);
-      saveState(next);
-      return next;
-    });
+  // 初回ロード & リアルタイム購読
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    fetchState()
+      .then((state) => {
+        setAppStateLocal(state);
+        setLoading(false);
+        // リアルタイム同期（他のブラウザからの変更を反映）
+        unsubscribe = subscribeState((s) => setAppStateLocal(s));
+      })
+      .catch((err) => {
+        console.error(err);
+        const msg = err?.code === 'unavailable'
+          ? 'Firestore に接続できません。Firebase コンソールで Firestore Database を作成してください。'
+          : `Firebase エラー: ${err?.message ?? err}`;
+        setError(msg);
+        setLoading(false);
+      });
+
+    return () => { unsubscribe?.(); };
   }, []);
+
+  /** 状態を更新して Firestore に保存 */
+  const setAppState = useCallback(
+    async (updater: (prev: AppState) => AppState) => {
+      setAppStateLocal((prev) => {
+        const next = updater(prev);
+        saveState(next).catch(console.error);
+        return next;
+      });
+    },
+    [],
+  );
 
   /** 週エントリを送信し、月またぎ分割して monthlyData に反映 */
   const submitWeekEntry = useCallback(
@@ -49,7 +63,6 @@ export default function App() {
       const newEntry: WeekEntry = { ...entry, id, submittedAt };
 
       setAppState((prev) => {
-        // 月またぎ分割
         const splits = splitWeekByMonth(
           parseDate(entry.weekStart),
           parseDate(entry.weekEnd),
@@ -77,6 +90,28 @@ export default function App() {
     },
     [setAppState],
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-500">データを読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl shadow-sm p-6 max-w-sm text-center">
+          <p className="text-red-600 font-medium mb-2">接続エラー</p>
+          <p className="text-sm text-gray-500">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
