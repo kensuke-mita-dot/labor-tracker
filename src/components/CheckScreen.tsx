@@ -12,6 +12,8 @@ import {
   formatPercent,
 } from '../utils/calcUtils';
 
+const ADMIN_PASSWORD = 'admin';
+
 interface Props {
   appState: AppState;
 }
@@ -19,7 +21,6 @@ interface Props {
 function getAvailableMonths(monthlyData: Record<string, unknown>): string[] {
   const keys = Object.keys(monthlyData);
   if (keys.length === 0) {
-    // デフォルト: 今月
     const now = new Date();
     return [toMonthKey(now.getFullYear(), now.getMonth() + 1)];
   }
@@ -40,12 +41,33 @@ export default function CheckScreen({ appState }: Props) {
     return availableMonths.includes(cur) ? cur : availableMonths[availableMonths.length - 1];
   });
 
+  // 管理者認証
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
   const summary = useMemo(() => {
     const { year, month } = parseMonthKey(selectedMonth);
     return calcMonthlySummary(selectedMonth, year, month, members, categories, monthlyData);
   }, [selectedMonth, members, categories, monthlyData]);
 
   const { year, month } = parseMonthKey(selectedMonth);
+
+  function handleAdminLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAdmin(true);
+      setShowPasswordInput(false);
+      setPasswordInput('');
+      setPasswordError('');
+    } else {
+      setPasswordError('パスワードが違います。');
+    }
+  }
+
+  // カテゴリ×メンバー別の人件費を計算
+  const totalSalary = members.reduce((s, m) => s + m.monthlySalary, 0);
 
   return (
     <div className="space-y-4">
@@ -100,7 +122,6 @@ export default function CheckScreen({ appState }: Props) {
           </p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {/* ヘッダー */}
             <div className="grid grid-cols-4 px-4 py-2 text-xs text-gray-400 font-medium">
               <span>カテゴリ</span>
               <span className="text-right">合計時間</span>
@@ -109,28 +130,52 @@ export default function CheckScreen({ appState }: Props) {
             </div>
 
             {summary.categories.map((cat) => (
-              <div
-                key={cat.categoryId}
-                className="grid grid-cols-4 px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
-              >
-                <span className="font-medium text-gray-800 truncate pr-2">{cat.categoryName}</span>
-                <span className="text-right text-gray-600">{formatHours(cat.totalHours)}</span>
-                <span className="text-right">
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                      cat.workShare >= 50
-                        ? 'bg-blue-100 text-blue-700'
-                        : cat.workShare >= 20
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    {formatPercent(cat.workShare)}
+              <div key={cat.categoryId}>
+                <div className="grid grid-cols-4 px-4 py-3 text-sm hover:bg-gray-50 transition-colors">
+                  <span className="font-medium text-gray-800 truncate pr-2">{cat.categoryName}</span>
+                  <span className="text-right text-gray-600">{formatHours(cat.totalHours)}</span>
+                  <span className="text-right">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                        cat.workShare >= 50
+                          ? 'bg-blue-100 text-blue-700'
+                          : cat.workShare >= 20
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {formatPercent(cat.workShare)}
+                    </span>
                   </span>
-                </span>
-                <span className="text-right text-gray-800 font-medium">
-                  {formatCurrency(cat.laborCost)}
-                </span>
+                  <span className="text-right text-gray-800 font-medium">
+                    {formatCurrency(cat.laborCost)}
+                  </span>
+                </div>
+
+                {/* 管理者のみ: メンバー別人件費内訳 */}
+                {isAdmin && members.length > 0 && (
+                  <div className="bg-gray-50 px-6 pb-2 space-y-1">
+                    {members.map((member) => {
+                      const memberHours = monthlyData[selectedMonth]?.[member.id]?.[cat.categoryId] ?? 0;
+                      if (memberHours === 0) return null;
+                      const memberShare = summary.monthlyTotalHours > 0
+                        ? memberHours / summary.monthlyTotalHours
+                        : 0;
+                      const memberCost = memberShare * totalSalary;
+                      return (
+                        <div key={member.id} className="flex items-center justify-between text-xs text-gray-500 py-0.5">
+                          <span className="pl-2 border-l-2 border-gray-300">{member.name}</span>
+                          <div className="flex gap-4">
+                            <span>{formatHours(memberHours)}</span>
+                            <span className="text-gray-700 font-medium w-20 text-right">
+                              {formatCurrency(memberCost)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -151,45 +196,46 @@ export default function CheckScreen({ appState }: Props) {
         )}
       </div>
 
-      {/* メンバー別内訳 */}
-      {members.length > 0 && categories.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-700">メンバー別内訳</h2>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {members.map((member) => {
-              const memberData = monthlyData[selectedMonth]?.[member.id] ?? {};
-              const totalH = Object.values(memberData).reduce((s, v) => s + v, 0);
-              return (
-                <div key={member.id} className="px-4 py-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-800">{member.name}</span>
-                    <span className="text-sm text-gray-600">{formatHours(totalH)}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((cat) => {
-                      const h = memberData[cat.id] ?? 0;
-                      if (h === 0) return null;
-                      return (
-                        <span
-                          key={cat.id}
-                          className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full"
-                        >
-                          {cat.name}: {formatHours(h)}
-                        </span>
-                      );
-                    })}
-                    {totalH === 0 && (
-                      <span className="text-xs text-gray-400">未入力</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 管理者ログイン／ログアウト */}
+      <div className="flex justify-end">
+        {isAdmin ? (
+          <button
+            onClick={() => setIsAdmin(false)}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            🔓 管理者モード終了
+          </button>
+        ) : showPasswordInput ? (
+          <form onSubmit={handleAdminLogin} className="flex items-center gap-2">
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(''); }}
+              placeholder="管理者パスワード"
+              autoFocus
+              className="border border-gray-300 rounded-lg px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button type="submit" className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg">
+              確認
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowPasswordInput(false); setPasswordError(''); setPasswordInput(''); }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              キャンセル
+            </button>
+            {passwordError && <span className="text-xs text-red-500">{passwordError}</span>}
+          </form>
+        ) : (
+          <button
+            onClick={() => setShowPasswordInput(true)}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            🔒 管理者として表示
+          </button>
+        )}
+      </div>
     </div>
   );
 }
