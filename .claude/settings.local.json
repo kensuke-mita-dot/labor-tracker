@@ -31,7 +31,8 @@
       "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run list --repo kensuke-mita-dot/labor-tracker --limit 1)",
       "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run watch 23740795049 --repo kensuke-mita-dot/labor-tracker)",
       "Bash(PATH=\"/opt/homebrew/bin:$PATH\" npm install firebase)",
-      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run watch 23969900366 --repo kensuke-mita-dot/labor-tracker)"
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh run watch 23969900366 --repo kensuke-mita-dot/labor-tracker)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" gh api \"https://firestore.googleapis.com/v1/projects/labor-tracker-bookkon/databases/\\(default\\)/documents\")"
     ]
   }
 }

@@ -12,7 +12,7 @@ import {
   formatPercent,
 } from '../utils/calcUtils';
 
-const ADMIN_PASSWORD = 'admin';
+const ADMIN_PASSWORD = 'admin.dot';
 
 interface Props {
   appState: AppState;
