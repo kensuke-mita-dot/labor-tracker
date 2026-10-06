@@ -7,6 +7,12 @@ import {
   splitWeekByMonth,
   parseDate,
 } from '../utils/dateUtils';
+import {
+  buildCategoryGroups,
+  getLeafCategories,
+  applyDefaultStructure,
+  DEFAULT_CATEGORY_STRUCTURE,
+} from '../utils/categoryUtils';
 
 const ADMIN_PASSWORD = 'admin.dot';
 
@@ -35,6 +41,7 @@ export default function AdminScreen({ appState, setAppState }: Props) {
 
   // Category form
   const [categoryName, setCategoryName] = useState('');
+  const [categoryParentId, setCategoryParentId] = useState('');
   const [categoryError, setCategoryError] = useState('');
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
@@ -105,26 +112,73 @@ export default function AdminScreen({ appState, setAppState }: Props) {
     setCategoryError('');
     const name = categoryName.trim();
     if (!name) { setCategoryError('カテゴリ名を入力してください。'); return; }
+    if (
+      editingCategory && categoryParentId &&
+      appState.categories.some((c) => c.parentId === editingCategory.id)
+    ) {
+      setCategoryError('子カテゴリを持つカテゴリは他のカテゴリの下に移動できません。');
+      return;
+    }
+    // Firestore は undefined を保存できないため、親なしの場合は parentId キー自体を持たせない
+    const withParent = (c: Category): Category => {
+      const { parentId: _old, ...rest } = c;
+      return categoryParentId ? { ...rest, parentId: categoryParentId } : rest;
+    };
     setAppState((prev) => {
       if (editingCategory) {
-        return { ...prev, categories: prev.categories.map((c) => c.id === editingCategory.id ? { ...c, name } : c) };
+        return { ...prev, categories: prev.categories.map((c) => c.id === editingCategory.id ? withParent({ ...c, name }) : c) };
       }
-      return { ...prev, categories: [...prev.categories, { id: generateId(), name }] };
+      return { ...prev, categories: [...prev.categories, withParent({ id: generateId(), name })] };
     });
+    resetCategoryForm();
+  }
+
+  function resetCategoryForm() {
     setCategoryName('');
+    setCategoryParentId('');
     setEditingCategory(null);
   }
 
   function handleEditCategory(c: Category) {
     setEditingCategory(c);
     setCategoryName(c.name);
+    setCategoryParentId(c.parentId ?? '');
     setCategoryError('');
   }
 
   function handleDeleteCategory(id: string) {
-    setAppState((prev) => ({ ...prev, categories: prev.categories.filter((c) => c.id !== id) }));
-    if (editingCategory?.id === id) { setEditingCategory(null); setCategoryName(''); }
+    setAppState((prev) => ({
+      ...prev,
+      categories: prev.categories
+        .filter((c) => c.id !== id)
+        // 親を削除した場合、子は単独カテゴリになる
+        .map((c) => {
+          if (c.parentId !== id) return c;
+          const { parentId: _old, ...rest } = c;
+          return rest;
+        }),
+    }));
+    if (editingCategory?.id === id) resetCategoryForm();
   }
+
+  function handleApplyDefaultStructure() {
+    const summary = DEFAULT_CATEGORY_STRUCTURE
+      .map((d) => (d.children.length > 0 ? `${d.name}（${d.children.join('・')}）` : d.name))
+      .join('\n');
+    if (!window.confirm(
+      `カテゴリを以下の構成に置き換えます。\n\n${summary}\n\n` +
+      '同名の既存カテゴリの入力データは引き継がれます。構成に含まれない既存カテゴリも削除されず、単独カテゴリとして残ります。よろしいですか？',
+    )) return;
+    setAppState((prev) => ({ ...prev, categories: applyDefaultStructure(prev.categories, generateId) }));
+    resetCategoryForm();
+  }
+
+  const categoryGroups = useMemo(() => buildCategoryGroups(appState.categories), [appState.categories]);
+  const leafCategories = useMemo(() => getLeafCategories(appState.categories), [appState.categories]);
+  // 親として選べるのはトップレベルのカテゴリ（編集中の自分自身は除く）
+  const parentOptions = categoryGroups
+    .map((g) => g.category)
+    .filter((c) => c.id !== editingCategory?.id);
 
   // --- Entry edit operations ---
   const availableMonths = useMemo(() => {
@@ -323,34 +377,63 @@ export default function AdminScreen({ appState, setAppState }: Props) {
             <h2 className="text-sm font-semibold text-gray-700">業務カテゴリ管理</h2>
           </div>
           <div className="p-4 space-y-3">
-            <form onSubmit={handleAddCategory} className="flex gap-2">
+            <form onSubmit={handleAddCategory} className="flex gap-2 flex-wrap">
               <input
                 type="text" placeholder="カテゴリ名" value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <select
+                value={categoryParentId}
+                onChange={(e) => setCategoryParentId(e.target.value)}
+                className="w-36 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">親なし</option>
+                {parentOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} の下</option>
+                ))}
+              </select>
               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">
                 {editingCategory ? '更新' : '追加'}
               </button>
               {editingCategory && (
-                <button type="button" onClick={() => { setEditingCategory(null); setCategoryName(''); }}
+                <button type="button" onClick={resetCategoryForm}
                   className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm">
                   キャンセル
                 </button>
               )}
             </form>
             {categoryError && <p className="text-sm text-red-600">{categoryError}</p>}
+            <div className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2">
+              <p className="text-xs text-gray-500">ホテル事業 / BOOK事業 / 本部 の標準構成を一括設定します</p>
+              <button
+                type="button"
+                onClick={handleApplyDefaultStructure}
+                className="text-xs border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-lg whitespace-nowrap"
+              >
+                標準構成を適用
+              </button>
+            </div>
             {appState.categories.length === 0 ? (
               <p className="text-sm text-gray-400 py-2">まだカテゴリがありません。</p>
             ) : (
               <ul className="divide-y divide-gray-50">
-                {appState.categories.map((c) => (
-                  <li key={c.id} className="flex items-center gap-3 py-2">
-                    <span className="flex-1 text-sm font-medium text-gray-800">{c.name}</span>
-                    <button onClick={() => handleEditCategory(c)} className="text-xs text-blue-600 hover:underline">編集</button>
-                    <button onClick={() => handleDeleteCategory(c.id)} className="text-xs text-red-500 hover:underline">削除</button>
-                  </li>
-                ))}
+                {categoryGroups.flatMap(({ category, children }) => [
+                  <li key={category.id} className="flex items-center gap-3 py-2 px-2 bg-blue-50 rounded">
+                    <span className="flex-1 text-sm font-bold text-blue-900">{category.name}</span>
+                    <button onClick={() => handleEditCategory(category)} className="text-xs text-blue-600 hover:underline">編集</button>
+                    <button onClick={() => handleDeleteCategory(category.id)} className="text-xs text-red-500 hover:underline">削除</button>
+                  </li>,
+                  ...children.map((c) => (
+                    <li key={c.id} className="flex items-center gap-3 py-2 pl-6 pr-2">
+                      <span className="flex-1 text-sm text-gray-800">
+                        <span className="text-gray-300 mr-1">└</span>{c.name}
+                      </span>
+                      <button onClick={() => handleEditCategory(c)} className="text-xs text-blue-600 hover:underline">編集</button>
+                      <button onClick={() => handleDeleteCategory(c.id)} className="text-xs text-red-500 hover:underline">削除</button>
+                    </li>
+                  )),
+                ])}
               </ul>
             )}
           </div>
@@ -381,7 +464,7 @@ export default function AdminScreen({ appState, setAppState }: Props) {
               <h2 className="text-sm font-semibold text-gray-700">月次時間の直接編集</h2>
               <p className="text-xs text-gray-400 mt-0.5">月またぎ按分後の実数値を直接変更します</p>
             </div>
-            {appState.members.length === 0 || appState.categories.length === 0 ? (
+            {appState.members.length === 0 || leafCategories.length === 0 ? (
               <p className="px-4 py-6 text-sm text-gray-400 text-center">メンバーとカテゴリを登録してください。</p>
             ) : (
               <div className="p-4 space-y-4">
@@ -389,9 +472,16 @@ export default function AdminScreen({ appState, setAppState }: Props) {
                   <div key={member.id}>
                     <p className="text-sm font-semibold text-gray-700 mb-2">{member.name}</p>
                     <div className="space-y-1.5 pl-2">
-                      {appState.categories.map((cat) => (
+                      {leafCategories.map((cat) => (
                         <div key={cat.id} className="flex items-center gap-3">
-                          <label className="flex-1 text-sm text-gray-600">{cat.name}</label>
+                          <label className="flex-1 text-sm text-gray-600">
+                            {cat.parentId && (
+                              <span className="text-xs text-gray-400 mr-1">
+                                {appState.categories.find((c) => c.id === cat.parentId)?.name} /
+                              </span>
+                            )}
+                            {cat.name}
+                          </label>
                           <input
                             type="number" min="0" step="0.1"
                             value={getEditHour(member.id, cat.id)}
@@ -438,10 +528,11 @@ export default function AdminScreen({ appState, setAppState }: Props) {
                             {member?.name ?? '不明'}{' '}
                             <span className="font-normal text-gray-500 text-xs">
                               {entry.weekStart} 〜 {entry.weekEnd}
+                              {entry.workDays !== undefined && `（出勤 ${entry.workDays}日）`}
                             </span>
                           </p>
                           <div className="flex flex-wrap gap-1.5 mt-1">
-                            {appState.categories.map((cat) => {
+                            {leafCategories.map((cat) => {
                               const h = entry.hours[cat.id];
                               if (!h) return null;
                               return (

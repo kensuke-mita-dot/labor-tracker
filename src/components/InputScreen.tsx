@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { AppState, WeekEntry } from '../types';
 import { getLastWeekPeriod, toDateString, formatWeekRange } from '../utils/dateUtils';
+import { buildCategoryGroups, getLeafCategories } from '../utils/categoryUtils';
+import { formatHours } from '../utils/calcUtils';
 
 interface Props {
   appState: AppState;
@@ -11,6 +13,7 @@ export default function InputScreen({ appState, onSubmit }: Props) {
   const { members, categories, weekEntries } = appState;
 
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [workDays, setWorkDays] = useState('');
   const [hours, setHours] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -21,6 +24,9 @@ export default function InputScreen({ appState, onSubmit }: Props) {
   );
   const weekStartStr = toDateString(weekStart);
   const weekEndStr = toDateString(weekEnd);
+
+  const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
+  const leafCategories = useMemo(() => getLeafCategories(categories), [categories]);
 
   const alreadySubmitted = useMemo(() => {
     if (!selectedMemberId) return false;
@@ -33,6 +39,11 @@ export default function InputScreen({ appState, onSubmit }: Props) {
     setHours((prev) => ({ ...prev, [catId]: value }));
   }
 
+  function hourValue(catId: string): number {
+    const val = parseFloat(hours[catId] ?? '');
+    return isNaN(val) || val < 0 ? 0 : val;
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -41,13 +52,18 @@ export default function InputScreen({ appState, onSubmit }: Props) {
       setError('名前を選択してください。');
       return;
     }
-    if (categories.length === 0) {
+    const parsedWorkDays = Number(workDays);
+    if (workDays.trim() === '' || !Number.isInteger(parsedWorkDays) || parsedWorkDays < 0 || parsedWorkDays > 7) {
+      setError('出勤日数を0〜7の整数で入力してください。');
+      return;
+    }
+    if (leafCategories.length === 0) {
       setError('カテゴリが登録されていません。管理者に連絡してください。');
       return;
     }
 
     const parsedHours: Record<string, number> = {};
-    for (const cat of categories) {
+    for (const cat of leafCategories) {
       const val = parseFloat(hours[cat.id] ?? '0');
       if (isNaN(val) || val < 0) {
         setError(`「${cat.name}」の時間が不正です。`);
@@ -66,9 +82,11 @@ export default function InputScreen({ appState, onSubmit }: Props) {
       memberId: selectedMemberId,
       weekStart: weekStartStr,
       weekEnd: weekEndStr,
+      workDays: parsedWorkDays,
       hours: parsedHours,
     });
     setSubmitted(true);
+    setWorkDays('');
     setHours({});
   }
 
@@ -126,27 +144,81 @@ export default function InputScreen({ appState, onSubmit }: Props) {
           </div>
         )}
 
-        {/* カテゴリ別時間入力 */}
-        {selectedMemberId && !alreadySubmitted && categories.length > 0 && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+        {/* 出勤日数・カテゴリ別時間入力 */}
+        {selectedMemberId && !alreadySubmitted && leafCategories.length > 0 && (
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">出勤日数</label>
+              <div className="flex items-center gap-3">
+                <span className="flex-1 text-sm text-gray-700">先週の出勤日数</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  step="1"
+                  value={workDays}
+                  onChange={(e) => setWorkDays(e.target.value)}
+                  placeholder="0"
+                  className="w-24 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-500 w-6">日</span>
+              </div>
+            </div>
+
             <div>
               <p className="text-sm font-medium text-gray-700 mb-2">カテゴリ別時間（時間）</p>
-              <div className="space-y-2">
-                {categories.map((cat) => (
-                  <div key={cat.id} className="flex items-center gap-3">
-                    <label className="flex-1 text-sm text-gray-700">{cat.name}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={hours[cat.id] ?? ''}
-                      onChange={(e) => handleHourChange(cat.id, e.target.value)}
-                      placeholder="0"
-                      className="w-24 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-500 w-6">h</span>
-                  </div>
-                ))}
+              <div className="space-y-3">
+                {categoryGroups.map(({ category, children }) => {
+                  if (children.length === 0) {
+                    // 単独カテゴリ
+                    return (
+                      <div
+                        key={category.id}
+                        className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2"
+                      >
+                        <label className="flex-1 text-sm font-bold text-blue-900">{category.name}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={hours[category.id] ?? ''}
+                          onChange={(e) => handleHourChange(category.id, e.target.value)}
+                          placeholder="0"
+                          className="w-24 bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-500 w-6">h</span>
+                      </div>
+                    );
+                  }
+                  const subtotal = children.reduce((sum, c) => sum + hourValue(c.id), 0);
+                  return (
+                    <div key={category.id} className="border border-blue-100 rounded-lg overflow-hidden">
+                      <div className="flex items-center gap-3 bg-blue-50 px-3 py-2">
+                        <span className="flex-1 text-sm font-bold text-blue-900">{category.name}</span>
+                        <span className="text-sm font-bold text-blue-900">
+                          合計 {formatHours(subtotal)}
+                        </span>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {children.map((cat) => (
+                          <div key={cat.id} className="flex items-center gap-3 pl-6 pr-3 py-1.5">
+                            <label className="flex-1 text-sm text-gray-700">{cat.name}</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={hours[cat.id] ?? ''}
+                              onChange={(e) => handleHourChange(cat.id, e.target.value)}
+                              placeholder="0"
+                              className="w-24 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-500 w-6">h</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -165,7 +237,7 @@ export default function InputScreen({ appState, onSubmit }: Props) {
           </form>
         )}
 
-        {selectedMemberId && !alreadySubmitted && categories.length === 0 && (
+        {selectedMemberId && !alreadySubmitted && leafCategories.length === 0 && (
           <p className="text-sm text-gray-500">カテゴリが登録されていません。</p>
         )}
       </div>
