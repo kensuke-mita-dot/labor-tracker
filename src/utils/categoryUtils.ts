@@ -35,6 +35,7 @@ export function getLeafCategories(categories: Category[]): Category[] {
 /**
  * 既存カテゴリを指定構成に置き換える。
  * 同名の既存カテゴリはIDを引き継ぐため、入力済みデータは保持される。
+ * 構成に含まれない既存カテゴリも削除せず、単独カテゴリとして末尾に残す（過去データを表示し続けるため）。
  */
 export function applyDefaultStructure(
   existing: Category[],
@@ -48,6 +49,12 @@ export function applyDefaultStructure(
     for (const childName of def.children) {
       result.push({ id: byName.get(childName)?.id ?? generateId(), name: childName, parentId });
     }
+  }
+  const used = new Set(result.map((c) => c.id));
+  for (const c of existing) {
+    if (used.has(c.id)) continue;
+    const { parentId: _old, ...rest } = c;
+    result.push(rest);
   }
   return result;
 }

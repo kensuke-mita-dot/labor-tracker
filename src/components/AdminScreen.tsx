@@ -167,7 +167,7 @@ export default function AdminScreen({ appState, setAppState }: Props) {
       .join('\n');
     if (!window.confirm(
       `カテゴリを以下の構成に置き換えます。\n\n${summary}\n\n` +
-      '同名の既存カテゴリの入力データは引き継がれます。構成に含まれないカテゴリは削除されます。よろしいですか？',
+      '同名の既存カテゴリの入力データは引き継がれます。構成に含まれない既存カテゴリも削除されず、単独カテゴリとして残ります。よろしいですか？',
     )) return;
     setAppState((prev) => ({ ...prev, categories: applyDefaultStructure(prev.categories, generateId) }));
     resetCategoryForm();
