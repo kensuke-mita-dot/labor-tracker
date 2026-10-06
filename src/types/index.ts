@@ -7,6 +7,7 @@ export interface Member {
 export interface Category {
   id: string;
   name: string;
+  parentId?: string; // 親カテゴリID（子カテゴリのみ設定）
 }
 
 export interface WeekEntry {
@@ -14,6 +15,7 @@ export interface WeekEntry {
   memberId: string;
   weekStart: string; // YYYY-MM-DD (Monday)
   weekEnd: string;   // YYYY-MM-DD (Sunday)
+  workDays?: number; // 出勤日数
   hours: Record<string, number>; // categoryId -> hours
   submittedAt: string;
 }

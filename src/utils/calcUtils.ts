@@ -1,5 +1,6 @@
 import { Member, Category, MonthlyData } from '../types';
 import { getMonthlyTotalHours } from './dateUtils';
+import { buildCategoryGroups } from './categoryUtils';
 
 export interface CategorySummary {
   categoryId: string;
@@ -9,13 +10,18 @@ export interface CategorySummary {
   laborCost: number;  // 円
 }
 
+export interface CategoryGroupSummary extends CategorySummary {
+  children: CategorySummary[]; // 子カテゴリ内訳（単独カテゴリは空）
+}
+
 export interface MonthlySummary {
   monthKey: string;
   year: number;
   month: number;
   monthlyTotalHours: number; // チーム総稼働時間上限
   totalInputHours: number;   // 入力された合計時間
-  categories: CategorySummary[];
+  categories: CategorySummary[];    // 入力対象カテゴリ（子・単独）
+  groups: CategoryGroupSummary[];   // 親カテゴリ単位の集計
   totalLaborCost: number;
 }
 
@@ -39,7 +45,7 @@ export function calcMonthlySummary(
 
   const dataForMonth = monthlyData[monthKey] ?? {};
 
-  const categorySummaries: CategorySummary[] = categories.map((cat) => {
+  const summarize = (cat: Category): CategorySummary => {
     let totalHours = 0;
     for (const memberHours of Object.values(dataForMonth)) {
       totalHours += memberHours[cat.id] ?? 0;
@@ -53,7 +59,25 @@ export function calcMonthlySummary(
       workShare,
       laborCost,
     };
+  };
+
+  // 親カテゴリの値は子カテゴリの合計から算出する
+  const groups: CategoryGroupSummary[] = buildCategoryGroups(categories).map((g) => {
+    if (g.children.length === 0) return { ...summarize(g.category), children: [] };
+    const children = g.children.map(summarize);
+    return {
+      categoryId: g.category.id,
+      categoryName: g.category.name,
+      totalHours: children.reduce((s, c) => s + c.totalHours, 0),
+      workShare: children.reduce((s, c) => s + c.workShare, 0),
+      laborCost: children.reduce((s, c) => s + c.laborCost, 0),
+      children,
+    };
   });
+
+  const categorySummaries: CategorySummary[] = groups.flatMap((g) =>
+    g.children.length > 0 ? g.children : [g],
+  );
 
   const totalInputHours = categorySummaries.reduce((s, c) => s + c.totalHours, 0);
   const totalLaborCost = categorySummaries.reduce((s, c) => s + c.laborCost, 0);
@@ -65,6 +89,7 @@ export function calcMonthlySummary(
     monthlyTotalHours: teamTotalHours,
     totalInputHours,
     categories: categorySummaries,
+    groups,
     totalLaborCost,
   };
 }
