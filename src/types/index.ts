@@ -18,6 +18,7 @@ export interface WeekEntry {
   workDays?: number; // 出勤日数
   hours: Record<string, number>; // categoryId -> hours
   submittedAt: string;
+  updatedAt?: string; // 修正日時（修正した場合のみ）
 }
 
 // monthKey "YYYY-MM" -> memberId -> categoryId -> hours

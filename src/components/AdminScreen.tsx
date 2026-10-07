@@ -529,6 +529,7 @@ export default function AdminScreen({ appState, setAppState }: Props) {
                             <span className="font-normal text-gray-500 text-xs">
                               {entry.weekStart} 〜 {entry.weekEnd}
                               {entry.workDays !== undefined && `（出勤 ${entry.workDays}日）`}
+                              {entry.updatedAt && '・修正済み'}
                             </span>
                           </p>
                           <div className="flex flex-wrap gap-1.5 mt-1">
