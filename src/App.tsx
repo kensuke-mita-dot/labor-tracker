@@ -7,6 +7,23 @@ import InputScreen from './components/InputScreen';
 import CheckScreen from './components/CheckScreen';
 import AdminScreen from './components/AdminScreen';
 
+/** 週エントリの時間を月またぎ按分して monthlyData に加算（sign=-1 で減算）する */
+function applyEntryToMonthly(
+  monthlyData: MonthlyData,
+  entry: Pick<WeekEntry, 'memberId' | 'weekStart' | 'weekEnd' | 'hours'>,
+  sign: 1 | -1,
+): void {
+  const splits = splitWeekByMonth(parseDate(entry.weekStart), parseDate(entry.weekEnd));
+  for (const { monthKey, ratio } of splits) {
+    if (!monthlyData[monthKey]) monthlyData[monthKey] = {};
+    if (!monthlyData[monthKey][entry.memberId]) monthlyData[monthKey][entry.memberId] = {};
+    const memberData = monthlyData[monthKey][entry.memberId];
+    for (const [catId, hours] of Object.entries(entry.hours)) {
+      memberData[catId] = Math.max(0, (memberData[catId] ?? 0) + sign * hours * ratio);
+    }
+  }
+}
+
 const DEFAULT_STATE: AppState = {
   members: [],
   categories: [],
@@ -63,27 +80,40 @@ export default function App() {
       const newEntry: WeekEntry = { ...entry, id, submittedAt };
 
       setAppState((prev) => {
-        const splits = splitWeekByMonth(
-          parseDate(entry.weekStart),
-          parseDate(entry.weekEnd),
-        );
-
         const newMonthlyData: MonthlyData = JSON.parse(JSON.stringify(prev.monthlyData));
-
-        for (const { monthKey, ratio } of splits) {
-          if (!newMonthlyData[monthKey]) newMonthlyData[monthKey] = {};
-          if (!newMonthlyData[monthKey][entry.memberId]) {
-            newMonthlyData[monthKey][entry.memberId] = {};
-          }
-          for (const [catId, hours] of Object.entries(entry.hours)) {
-            const prev_h = newMonthlyData[monthKey][entry.memberId][catId] ?? 0;
-            newMonthlyData[monthKey][entry.memberId][catId] = prev_h + hours * ratio;
-          }
-        }
+        applyEntryToMonthly(newMonthlyData, entry, 1);
 
         return {
           ...prev,
           weekEntries: [...prev.weekEntries, newEntry],
+          monthlyData: newMonthlyData,
+        };
+      });
+    },
+    [setAppState],
+  );
+
+  /** 送信済みの週エントリを修正し、monthlyData を差し替える */
+  const updateWeekEntry = useCallback(
+    (entryId: string, changes: Pick<WeekEntry, 'workDays' | 'hours'>) => {
+      setAppState((prev) => {
+        const old = prev.weekEntries.find((e) => e.id === entryId);
+        if (!old) return prev;
+        // 入力画面に表示されないカテゴリの時間は元の値を残す
+        const updated: WeekEntry = {
+          ...old,
+          workDays: changes.workDays,
+          hours: { ...old.hours, ...changes.hours },
+          updatedAt: new Date().toISOString(),
+        };
+
+        const newMonthlyData: MonthlyData = JSON.parse(JSON.stringify(prev.monthlyData));
+        applyEntryToMonthly(newMonthlyData, old, -1);
+        applyEntryToMonthly(newMonthlyData, updated, 1);
+
+        return {
+          ...prev,
+          weekEntries: prev.weekEntries.map((e) => (e.id === entryId ? updated : e)),
           monthlyData: newMonthlyData,
         };
       });
@@ -125,7 +155,7 @@ export default function App() {
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         {screen === 'input' && (
-          <InputScreen appState={appState} onSubmit={submitWeekEntry} />
+          <InputScreen appState={appState} onSubmit={submitWeekEntry} onUpdate={updateWeekEntry} />
         )}
         {screen === 'check' && (
           <CheckScreen appState={appState} />
