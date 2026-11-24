@@ -1,4 +1,4 @@
-import { AppState } from '../types';
+import { AppState, Category } from '../types';
 import { CsvValue, roundTo } from './csvUtils';
 import { getCategoryPath, getLeafCategories } from './categoryUtils';
 import { parseDate, parseMonthKey, splitWeekByMonth } from './dateUtils';
@@ -18,6 +18,36 @@ export const SUMMARY_HEADER = [
 ];
 
 const DELETED_MEMBER = '(削除済みメンバー)';
+
+/**
+ * CSVのカテゴリ出力順（子カテゴリ名・単独カテゴリ名）。
+ * ここにないカテゴリは末尾に、カテゴリ管理画面の順で並ぶ。
+ */
+export const CSV_CATEGORY_ORDER = [
+  'ぶくとも。',
+  'BOOK婚',
+  'ぶくキャリ',
+  'BHJ',
+  'BHKK',
+  'MAHT',
+  'MAHB',
+  'MAHNM',
+  '総務',
+  '採用',
+  '事務',
+  '本部広報・SNS周り',
+  'その他',
+];
+
+const normalizeName = (name: string) => name.normalize('NFKC').trim();
+
+/** CSV出力用に並べた入力対象カテゴリ（子・単独） */
+export function getExportCategories(categories: Category[]): Category[] {
+  const rank = new Map(CSV_CATEGORY_ORDER.map((n, i) => [normalizeName(n), i]));
+  const rankOf = (c: Category) => rank.get(normalizeName(c.name)) ?? CSV_CATEGORY_ORDER.length;
+  // sort は安定ソートなので、リスト外のカテゴリは元の順を保つ
+  return [...getLeafCategories(categories)].sort((a, b) => rankOf(a) - rankOf(b));
+}
 
 /** メンバー絞り込みなし */
 export const ALL_MEMBERS = '';
@@ -44,7 +74,7 @@ export function buildDetailRows(
   const { members, categories, weekEntries } = state;
   const memberById = new Map(members.map((m) => [m.id, m]));
   const memberOrder = new Map(members.map((m, i) => [m.id, i]));
-  const catOrder = new Map(getLeafCategories(categories).map((c, i) => [c.id, i]));
+  const catOrder = new Map(getExportCategories(categories).map((c, i) => [c.id, i]));
   const orderOf = (id: string) => catOrder.get(id) ?? Number.MAX_SAFE_INTEGER;
 
   type Row = { sortKey: (string | number)[]; cells: CsvValue[] };
@@ -109,7 +139,7 @@ export function buildSummaryRows(
   const members = state.members;
   const targetMembers =
     memberId === ALL_MEMBERS ? members : members.filter((m) => m.id === memberId);
-  const leaves = getLeafCategories(categories);
+  const leaves = getExportCategories(categories);
   const rows: CsvValue[][] = [SUMMARY_HEADER];
 
   for (const monthKey of monthKeys) {
