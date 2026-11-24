@@ -177,9 +177,18 @@ export function buildSummaryRows(
 }
 
 /**
+ * 報告用の数値CSVのメンバー列の順（報告用スプレッドシートと同じ）。
+ * 名前で照合し、ここにないメンバーは末尾にメンバー管理画面の順で並ぶ。
+ */
+export const REPORT_MEMBER_ORDER = ['三田', '三浦', 'はな', '鶴田', '亥川', '伊藤', '有田', '松尾'];
+
+const normalizeMemberName = (name: string) => name.normalize('NFKC').replace(/\s+/g, '');
+
+/**
  * 報告用の数値CSV（縦 = カテゴリ、横 = メンバー、値 = 時間）。
  * 報告用スプレッドシートに貼り付けられるよう、CSV_CATEGORY_ORDER の行は
  * カテゴリが未登録・時間0でも必ず同じ位置に出力する。リスト外のカテゴリは末尾に追加。
+ * メンバー列も同様に REPORT_MEMBER_ORDER の列を必ず出力する（全メンバー出力時）。
  */
 export function buildReportRows(
   state: AppState,
@@ -187,9 +196,28 @@ export function buildReportRows(
   memberId: string = ALL_MEMBERS,
 ): CsvValue[][] {
   const { categories, monthlyData } = state;
-  const members =
-    memberId === ALL_MEMBERS ? state.members : state.members.filter((m) => m.id === memberId);
   const data = monthlyData[monthKey] ?? {};
+
+  // 列: 名前・月給・メンバーID（未登録の列は ID なし）
+  type Column = { name: string; salary: CsvValue; id?: string };
+  let columns: Column[];
+  if (memberId !== ALL_MEMBERS) {
+    columns = state.members
+      .filter((m) => m.id === memberId)
+      .map((m) => ({ name: m.name, salary: m.monthlySalary, id: m.id }));
+  } else {
+    const byName = new Map(state.members.map((m) => [normalizeMemberName(m.name), m]));
+    const used = new Set<string>();
+    columns = REPORT_MEMBER_ORDER.map((name) => {
+      const m = byName.get(normalizeMemberName(name));
+      if (!m) return { name, salary: '' };
+      used.add(m.id);
+      return { name, salary: m.monthlySalary, id: m.id };
+    });
+    for (const m of state.members) {
+      if (!used.has(m.id)) columns.push({ name: m.name, salary: m.monthlySalary, id: m.id });
+    }
+  }
 
   // 行ラベル → その行に集計するカテゴリID
   const rowIds = new Map<string, string[]>(CSV_CATEGORY_ORDER.map((n) => [n, []]));
@@ -204,15 +232,15 @@ export function buildReportRows(
   }
 
   const rows: CsvValue[][] = [
-    ['カテゴリ2', '内容', ...members.map((m) => m.name)],
-    ['', '月額人件費（円）', ...members.map((m) => m.monthlySalary)],
+    ['カテゴリ2', '内容', ...columns.map((c) => c.name)],
+    ['', '月額人件費（円）', ...columns.map((c) => c.salary)],
   ];
   for (const [label, ids] of rowIds) {
     rows.push([
       label,
       '',
-      ...members.map((m) =>
-        roundTo(ids.reduce((sum, id) => sum + (data[m.id]?.[id] ?? 0), 0), 2),
+      ...columns.map((c) =>
+        c.id ? roundTo(ids.reduce((sum, id) => sum + (data[c.id!]?.[id] ?? 0), 0), 2) : 0,
       ),
     ]);
   }
