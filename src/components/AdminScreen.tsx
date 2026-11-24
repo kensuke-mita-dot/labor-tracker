@@ -19,6 +19,7 @@ import {
   ALL_MEMBERS,
   buildDetailRows,
   buildSummaryRows,
+  buildReportRows,
   exportFileName,
 } from '../utils/exportUtils';
 
@@ -270,7 +271,15 @@ export default function AdminScreen({ appState, setAppState }: Props) {
   }
 
   // --- CSV export ---
-  function exportFile(kind: 'detail' | 'summary') {
+  function exportFile(kind: 'detail' | 'summary' | 'report') {
+    if (kind === 'report') {
+      const memberName = appState.members.find((m) => m.id === exportMemberId)?.name;
+      downloadCsv(
+        exportFileName('report', exportPeriod, memberName),
+        buildReportRows(appState, exportPeriod, exportMemberId),
+      );
+      return;
+    }
     const memberName = appState.members.find((m) => m.id === exportMemberId)?.name;
     const filename = exportFileName(kind, exportPeriod, memberName);
     const rows = kind === 'detail'
@@ -536,6 +545,16 @@ export default function AdminScreen({ appState, setAppState }: Props) {
                   ⬇ 明細CSV
                 </button>
               </div>
+              <button
+                onClick={() => exportFile('report')}
+                disabled={exportPeriod === ALL_PERIOD}
+                className="w-full border border-blue-600 text-blue-600 hover:bg-blue-50 disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                ⬇ 報告用の数値CSV
+              </button>
+              <p className="text-xs text-gray-400">
+                報告用の数値: 縦にカテゴリ・横にメンバー・値は時間（月を選択したときのみ）
+              </p>
             </div>
           </section>
 
