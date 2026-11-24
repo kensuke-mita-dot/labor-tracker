@@ -19,16 +19,28 @@ export const SUMMARY_HEADER = [
 
 const DELETED_MEMBER = '(削除済みメンバー)';
 
-/** ファイル名用の期間ラベル: "2026-11" / "all" */
-export function exportFileName(kind: 'detail' | 'summary', target: string): string {
-  return `labor_${kind}_${target}.csv`;
+/** メンバー絞り込みなし */
+export const ALL_MEMBERS = '';
+
+/** ファイル名: labor_detail_2026-11.csv / labor_summary_all_山田.csv */
+export function exportFileName(
+  kind: 'detail' | 'summary',
+  target: string,
+  memberName?: string,
+): string {
+  const suffix = memberName ? `_${memberName.replace(/[\\/:*?"<>|,;\s]+/g, '')}` : '';
+  return `labor_${kind}_${target}${suffix}.csv`;
 }
 
 /**
  * 入力明細CSV（1行 = 週エントリ × 年月 × カテゴリ）。
  * 月またぎの週は日数比で按分し、時間・出勤日数とも按分後の値を出力する。
  */
-export function buildDetailRows(state: AppState, target: string): CsvValue[][] {
+export function buildDetailRows(
+  state: AppState,
+  target: string,
+  memberId: string = ALL_MEMBERS,
+): CsvValue[][] {
   const { members, categories, weekEntries } = state;
   const memberById = new Map(members.map((m) => [m.id, m]));
   const memberOrder = new Map(members.map((m, i) => [m.id, i]));
@@ -39,6 +51,7 @@ export function buildDetailRows(state: AppState, target: string): CsvValue[][] {
   const rows: Row[] = [];
 
   for (const entry of weekEntries) {
+    if (memberId !== ALL_MEMBERS && entry.memberId !== memberId) continue;
     const member = memberById.get(entry.memberId);
     const splits = splitWeekByMonth(parseDate(entry.weekStart), parseDate(entry.weekEnd));
     const catIds = Object.keys(entry.hours)
@@ -86,8 +99,16 @@ export function buildDetailRows(state: AppState, target: string): CsvValue[][] {
  * 月次集計CSV（1行 = 年月 × メンバー × 子カテゴリ）。
  * 稼働シェア・人件費はチェック画面と同じ calcMemberBreakdown で算出する。
  */
-export function buildSummaryRows(state: AppState, monthKeys: string[]): CsvValue[][] {
-  const { members, categories, monthlyData } = state;
+export function buildSummaryRows(
+  state: AppState,
+  monthKeys: string[],
+  memberId: string = ALL_MEMBERS,
+): CsvValue[][] {
+  const { categories, monthlyData } = state;
+  // 稼働上限・月給合計はチーム全体で計算し、出力行だけ絞り込む（チェック画面の値と一致させる）
+  const members = state.members;
+  const targetMembers =
+    memberId === ALL_MEMBERS ? members : members.filter((m) => m.id === memberId);
   const leaves = getLeafCategories(categories);
   const rows: CsvValue[][] = [SUMMARY_HEADER];
 
@@ -95,10 +116,10 @@ export function buildSummaryRows(state: AppState, monthKeys: string[]): CsvValue
     const { year, month } = parseMonthKey(monthKey);
     const ctx = getMonthContext(year, month, members);
     // メンバーごとにまとめて出力する
-    const byMember = new Map<string, CsvValue[][]>(members.map((m) => [m.id, []]));
+    const byMember = new Map<string, CsvValue[][]>(targetMembers.map((m) => [m.id, []]));
     for (const cat of leaves) {
       const { parentName, childName } = getCategoryPath(categories, cat.id);
-      for (const b of calcMemberBreakdown(monthKey, cat.id, members, monthlyData, ctx)) {
+      for (const b of calcMemberBreakdown(monthKey, cat.id, targetMembers, monthlyData, ctx)) {
         byMember.get(b.memberId)!.push([
           monthKey,
           b.memberName,

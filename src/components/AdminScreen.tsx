@@ -13,6 +13,14 @@ import {
   applyDefaultStructure,
   DEFAULT_CATEGORY_STRUCTURE,
 } from '../utils/categoryUtils';
+import { downloadCsv } from '../utils/csvUtils';
+import {
+  ALL_PERIOD,
+  ALL_MEMBERS,
+  buildDetailRows,
+  buildSummaryRows,
+  exportFileName,
+} from '../utils/exportUtils';
 
 const ADMIN_PASSWORD = 'admin.dot';
 
@@ -52,6 +60,10 @@ export default function AdminScreen({ appState, setAppState }: Props) {
   });
   const [editingHours, setEditingHours] = useState<Record<string, Record<string, string>>>({});
   const [entrySaved, setEntrySaved] = useState(false);
+
+  // CSVエクスポート
+  const [exportPeriod, setExportPeriod] = useState(selectedMonth);
+  const [exportMemberId, setExportMemberId] = useState(ALL_MEMBERS);
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -257,6 +269,20 @@ export default function AdminScreen({ appState, setAppState }: Props) {
     });
   }
 
+  // --- CSV export ---
+  function exportFile(kind: 'detail' | 'summary') {
+    const memberName = appState.members.find((m) => m.id === exportMemberId)?.name;
+    const filename = exportFileName(kind, exportPeriod, memberName);
+    const rows = kind === 'detail'
+      ? buildDetailRows(appState, exportPeriod, exportMemberId)
+      : buildSummaryRows(
+          appState,
+          exportPeriod === ALL_PERIOD ? availableMonths : [exportPeriod],
+          exportMemberId,
+        );
+    downloadCsv(filename, rows);
+  }
+
   // 週エントリを月でフィルタ
   const weekEntriesForMonth = useMemo(() => {
     const { year, month } = parseMonthKey(selectedMonth);
@@ -448,7 +474,11 @@ export default function AdminScreen({ appState, setAppState }: Props) {
             <label className="text-sm font-medium text-gray-700 shrink-0">対象月</label>
             <select
               value={selectedMonth}
-              onChange={(e) => { setSelectedMonth(e.target.value); setEditingHours({}); }}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                setExportPeriod(e.target.value);
+                setEditingHours({});
+              }}
               className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {availableMonths.map((mk) => {
@@ -457,6 +487,57 @@ export default function AdminScreen({ appState, setAppState }: Props) {
               })}
             </select>
           </div>
+
+          {/* CSVエクスポート（誰がどのカテゴリに何時間か） */}
+          <section className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-700">CSVエクスポート</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                月次集計: メンバー×カテゴリの合計時間・人件費 ／ 明細: 週ごとの入力（月またぎは按分）
+              </p>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex gap-2 flex-wrap">
+                <select
+                  value={exportPeriod}
+                  onChange={(e) => setExportPeriod(e.target.value)}
+                  aria-label="出力期間"
+                  className="flex-1 min-w-[8rem] border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={ALL_PERIOD}>全期間</option>
+                  {availableMonths.map((mk) => {
+                    const { year, month } = parseMonthKey(mk);
+                    return <option key={mk} value={mk}>{formatMonthLabel(year, month)}</option>;
+                  })}
+                </select>
+                <select
+                  value={exportMemberId}
+                  onChange={(e) => setExportMemberId(e.target.value)}
+                  aria-label="メンバー"
+                  className="flex-1 min-w-[8rem] border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={ALL_MEMBERS}>全メンバー</option>
+                  {appState.members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => exportFile('summary')}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  ⬇ 月次集計CSV
+                </button>
+                <button
+                  onClick={() => exportFile('detail')}
+                  className="flex-1 border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  ⬇ 明細CSV
+                </button>
+              </div>
+            </div>
+          </section>
 
           {/* メンバー×カテゴリの月次時間を直接編集 */}
           <section className="bg-white rounded-xl shadow-sm overflow-hidden">
