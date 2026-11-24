@@ -39,11 +39,19 @@ export const CSV_CATEGORY_ORDER = [
   'その他',
 ];
 
+/** 別名（同じ位置に並べる）: 別名 → CSV_CATEGORY_ORDER 内の名前 */
+const CSV_CATEGORY_ALIASES: Record<string, string> = {
+  BOOKキャリ: 'ぶくキャリ',
+};
+
 const normalizeName = (name: string) => name.normalize('NFKC').trim();
 
 /** CSV出力用に並べた入力対象カテゴリ（子・単独） */
 export function getExportCategories(categories: Category[]): Category[] {
   const rank = new Map(CSV_CATEGORY_ORDER.map((n, i) => [normalizeName(n), i]));
+  for (const [alias, name] of Object.entries(CSV_CATEGORY_ALIASES)) {
+    rank.set(normalizeName(alias), rank.get(normalizeName(name))!);
+  }
   const rankOf = (c: Category) => rank.get(normalizeName(c.name)) ?? CSV_CATEGORY_ORDER.length;
   // sort は安定ソートなので、リスト外のカテゴリは元の順を保つ
   return [...getLeafCategories(categories)].sort((a, b) => rankOf(a) - rankOf(b));
