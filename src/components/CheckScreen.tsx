@@ -7,10 +7,19 @@ import {
 } from '../utils/dateUtils';
 import {
   calcMonthlySummary,
+  calcMemberBreakdown,
+  getMonthContext,
   formatHours,
   formatCurrency,
   formatPercent,
 } from '../utils/calcUtils';
+import { downloadCsv } from '../utils/csvUtils';
+import {
+  ALL_PERIOD,
+  buildDetailRows,
+  buildSummaryRows,
+  exportFileName,
+} from '../utils/exportUtils';
 
 const ADMIN_PASSWORD = 'admin.dot';
 
@@ -47,12 +56,25 @@ export default function CheckScreen({ appState }: Props) {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
-  const summary = useMemo(() => {
-    const { year, month } = parseMonthKey(selectedMonth);
-    return calcMonthlySummary(selectedMonth, year, month, members, categories, monthlyData);
-  }, [selectedMonth, members, categories, monthlyData]);
+  const isAllPeriod = selectedMonth === ALL_PERIOD;
+  // 「全期間」選択時は画面表示用に最新月を使う（画面の集計は月単位のため）
+  const displayMonth = isAllPeriod ? availableMonths[availableMonths.length - 1] : selectedMonth;
 
-  const { year, month } = parseMonthKey(selectedMonth);
+  const summary = useMemo(() => {
+    const { year, month } = parseMonthKey(displayMonth);
+    return calcMonthlySummary(displayMonth, year, month, members, categories, monthlyData);
+  }, [displayMonth, members, categories, monthlyData]);
+
+  const { year, month } = parseMonthKey(displayMonth);
+
+  function handleExportDetail() {
+    downloadCsv(exportFileName('detail', selectedMonth), buildDetailRows(appState, selectedMonth));
+  }
+
+  function handleExportSummary() {
+    const months = isAllPeriod ? availableMonths : [selectedMonth];
+    downloadCsv(exportFileName('summary', selectedMonth), buildSummaryRows(appState, months));
+  }
 
   function handleAdminLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -66,8 +88,7 @@ export default function CheckScreen({ appState }: Props) {
     }
   }
 
-  // カテゴリ×メンバー別の人件費を計算
-  const totalSalary = members.reduce((s, m) => s + m.monthlySalary, 0);
+  const monthCtx = getMonthContext(year, month, members);
 
   function renderShareBadge(share: number, bold: boolean) {
     return (
@@ -90,25 +111,17 @@ export default function CheckScreen({ appState }: Props) {
     if (!isAdmin || members.length === 0) return null;
     return (
       <div className="bg-gray-50 px-6 pb-2 space-y-1">
-        {members.map((member) => {
-          const memberHours = monthlyData[selectedMonth]?.[member.id]?.[categoryId] ?? 0;
-          if (memberHours === 0) return null;
-          const memberShare = summary.monthlyTotalHours > 0
-            ? memberHours / summary.monthlyTotalHours
-            : 0;
-          const memberCost = memberShare * totalSalary;
-          return (
-            <div key={member.id} className="flex items-center justify-between text-xs text-gray-500 py-0.5">
-              <span className="pl-2 border-l-2 border-gray-300">{member.name}</span>
-              <div className="flex gap-4">
-                <span>{formatHours(memberHours)}</span>
-                <span className="text-gray-700 font-medium w-20 text-right">
-                  {formatCurrency(memberCost)}
-                </span>
-              </div>
+        {calcMemberBreakdown(displayMonth, categoryId, members, monthlyData, monthCtx).map((b) => (
+          <div key={b.memberId} className="flex items-center justify-between text-xs text-gray-500 py-0.5">
+            <span className="pl-2 border-l-2 border-gray-300">{b.memberName}</span>
+            <div className="flex gap-4">
+              <span>{formatHours(b.hours)}</span>
+              <span className="text-gray-700 font-medium w-20 text-right">
+                {formatCurrency(b.laborCost)}
+              </span>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     );
   }
@@ -123,6 +136,7 @@ export default function CheckScreen({ appState }: Props) {
           onChange={(e) => setSelectedMonth(e.target.value)}
           className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
+          <option value={ALL_PERIOD}>全期間</option>
           {availableMonths.map((mk) => {
             const { year: y, month: m } = parseMonthKey(mk);
             return (
@@ -133,6 +147,38 @@ export default function CheckScreen({ appState }: Props) {
           })}
         </select>
       </div>
+
+      {/* CSVエクスポート */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-medium text-gray-700">CSVエクスポート</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              対象: {isAllPeriod ? '全期間' : formatMonthLabel(year, month)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExportDetail}
+              className="text-xs border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg"
+            >
+              ⬇ 明細
+            </button>
+            <button
+              onClick={handleExportSummary}
+              className="text-xs border border-blue-600 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg"
+            >
+              ⬇ 月次集計
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {isAllPeriod && (
+        <p className="text-xs text-gray-500 px-1">
+          ※ 画面の集計は月単位のため、最新月（{formatMonthLabel(year, month)}）を表示しています。
+        </p>
+      )}
 
       {/* 概要カード */}
       <div className="grid grid-cols-2 gap-3">

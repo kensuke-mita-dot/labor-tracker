@@ -25,6 +25,61 @@ export interface MonthlySummary {
   totalLaborCost: number;
 }
 
+export interface MonthContext {
+  teamTotalHours: number; // チーム総稼働時間上限
+  totalSalary: number;    // 全メンバー月給合計
+}
+
+/** 月のチーム総稼働時間上限・月給合計（チェック画面・CSV共通） */
+export function getMonthContext(year: number, month: number, members: Member[]): MonthContext {
+  return {
+    teamTotalHours: getMonthlyTotalHours(year, month) * (members.length || 1),
+    totalSalary: members.reduce((sum, m) => sum + m.monthlySalary, 0),
+  };
+}
+
+/** 時間から稼働シェア(%)と人件費(円)を算出する（チェック画面・CSV共通） */
+export function calcShareAndCost(
+  hours: number,
+  teamTotalHours: number,
+  totalSalary: number,
+): { workShare: number; laborCost: number } {
+  const workShare = teamTotalHours > 0 ? (hours / teamTotalHours) * 100 : 0;
+  return { workShare, laborCost: (workShare / 100) * totalSalary };
+}
+
+export interface MemberCategoryCost {
+  memberId: string;
+  memberName: string;
+  monthlySalary: number;
+  hours: number;
+  workShare: number; // %
+  laborCost: number; // 円
+}
+
+/** カテゴリ内のメンバー別内訳（時間が0のメンバーは除く） */
+export function calcMemberBreakdown(
+  monthKey: string,
+  categoryId: string,
+  members: Member[],
+  monthlyData: MonthlyData,
+  ctx: MonthContext,
+): MemberCategoryCost[] {
+  const result: MemberCategoryCost[] = [];
+  for (const member of members) {
+    const hours = monthlyData[monthKey]?.[member.id]?.[categoryId] ?? 0;
+    if (hours <= 1e-9) continue;
+    result.push({
+      memberId: member.id,
+      memberName: member.name,
+      monthlySalary: member.monthlySalary,
+      hours,
+      ...calcShareAndCost(hours, ctx.teamTotalHours, ctx.totalSalary),
+    });
+  }
+  return result;
+}
+
 /**
  * 月次サマリーを計算する。
  * チーム総稼働時間上限 = メンバー数 × 8 × (月の日数 - 9)
@@ -39,9 +94,7 @@ export function calcMonthlySummary(
   categories: Category[],
   monthlyData: MonthlyData,
 ): MonthlySummary {
-  const totalSalary = members.reduce((sum, m) => sum + m.monthlySalary, 0);
-  const perPersonHours = getMonthlyTotalHours(year, month);
-  const teamTotalHours = perPersonHours * (members.length || 1);
+  const { teamTotalHours, totalSalary } = getMonthContext(year, month, members);
 
   const dataForMonth = monthlyData[monthKey] ?? {};
 
@@ -50,8 +103,7 @@ export function calcMonthlySummary(
     for (const memberHours of Object.values(dataForMonth)) {
       totalHours += memberHours[cat.id] ?? 0;
     }
-    const workShare = teamTotalHours > 0 ? (totalHours / teamTotalHours) * 100 : 0;
-    const laborCost = (workShare / 100) * totalSalary;
+    const { workShare, laborCost } = calcShareAndCost(totalHours, teamTotalHours, totalSalary);
     return {
       categoryId: cat.id,
       categoryName: cat.name,
