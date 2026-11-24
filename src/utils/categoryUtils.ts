@@ -58,3 +58,16 @@ export function applyDefaultStructure(
   }
   return result;
 }
+
+/** カテゴリIDから「親カテゴリ名・子カテゴリ名」を返す。単独カテゴリは子カテゴリ名が空 */
+export function getCategoryPath(
+  categories: Category[],
+  categoryId: string,
+): { parentName: string; childName: string } {
+  for (const g of buildCategoryGroups(categories)) {
+    if (g.category.id === categoryId) return { parentName: g.category.name, childName: '' };
+    const child = g.children.find((c) => c.id === categoryId);
+    if (child) return { parentName: g.category.name, childName: child.name };
+  }
+  return { parentName: '(削除済みカテゴリ)', childName: '' };
+}

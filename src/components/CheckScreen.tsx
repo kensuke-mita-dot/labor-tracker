@@ -7,6 +7,8 @@ import {
 } from '../utils/dateUtils';
 import {
   calcMonthlySummary,
+  calcMemberBreakdown,
+  getMonthContext,
   formatHours,
   formatCurrency,
   formatPercent,
@@ -47,12 +49,14 @@ export default function CheckScreen({ appState }: Props) {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
-  const summary = useMemo(() => {
-    const { year, month } = parseMonthKey(selectedMonth);
-    return calcMonthlySummary(selectedMonth, year, month, members, categories, monthlyData);
-  }, [selectedMonth, members, categories, monthlyData]);
+  const displayMonth = selectedMonth;
 
-  const { year, month } = parseMonthKey(selectedMonth);
+  const summary = useMemo(() => {
+    const { year, month } = parseMonthKey(displayMonth);
+    return calcMonthlySummary(displayMonth, year, month, members, categories, monthlyData);
+  }, [displayMonth, members, categories, monthlyData]);
+
+  const { year, month } = parseMonthKey(displayMonth);
 
   function handleAdminLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -66,8 +70,7 @@ export default function CheckScreen({ appState }: Props) {
     }
   }
 
-  // カテゴリ×メンバー別の人件費を計算
-  const totalSalary = members.reduce((s, m) => s + m.monthlySalary, 0);
+  const monthCtx = getMonthContext(year, month, members);
 
   function renderShareBadge(share: number, bold: boolean) {
     return (
@@ -90,25 +93,17 @@ export default function CheckScreen({ appState }: Props) {
     if (!isAdmin || members.length === 0) return null;
     return (
       <div className="bg-gray-50 px-6 pb-2 space-y-1">
-        {members.map((member) => {
-          const memberHours = monthlyData[selectedMonth]?.[member.id]?.[categoryId] ?? 0;
-          if (memberHours === 0) return null;
-          const memberShare = summary.monthlyTotalHours > 0
-            ? memberHours / summary.monthlyTotalHours
-            : 0;
-          const memberCost = memberShare * totalSalary;
-          return (
-            <div key={member.id} className="flex items-center justify-between text-xs text-gray-500 py-0.5">
-              <span className="pl-2 border-l-2 border-gray-300">{member.name}</span>
-              <div className="flex gap-4">
-                <span>{formatHours(memberHours)}</span>
-                <span className="text-gray-700 font-medium w-20 text-right">
-                  {formatCurrency(memberCost)}
-                </span>
-              </div>
+        {calcMemberBreakdown(displayMonth, categoryId, members, monthlyData, monthCtx).map((b) => (
+          <div key={b.memberId} className="flex items-center justify-between text-xs text-gray-500 py-0.5">
+            <span className="pl-2 border-l-2 border-gray-300">{b.memberName}</span>
+            <div className="flex gap-4">
+              <span>{formatHours(b.hours)}</span>
+              <span className="text-gray-700 font-medium w-20 text-right">
+                {formatCurrency(b.laborCost)}
+              </span>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     );
   }
